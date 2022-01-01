@@ -5,13 +5,16 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <Authors>Siamango</Authors>
-    <Description>A .NET library to scrape by name and symbol NFT collections minted with the Metaplex protocol on Solana.</Description>
-    <PackageLicenseExpression></PackageLicenseExpression>
-    <Version>1.1.1</Version>
+    <Description>A .NET library that adds some useful composite RPC calls to the Solana chain to simply NFT collection management</Description>
+    <Version>1.0.1</Version>
     <Platforms>AnyCPU;x64</Platforms>
+    <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <RepositoryUrl>https://github.com/Siamango/SolmangoNET</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\LICENSE.txt" Pack="true" PackagePath="LICENSE.txt" />
     <PackageReference Include="OneOf" Version="3.0.205" />
     <PackageReference Include="Solnet.KeyStore" Version="0.4.17" />
     <PackageReference Include="Solnet.Programs" Version="0.4.17" />
