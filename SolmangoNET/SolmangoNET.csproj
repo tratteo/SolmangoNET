@@ -6,19 +6,21 @@
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <Authors>Siamango</Authors>
     <Description>A .NET library that adds some useful composite RPC calls to the Solana chain to simply NFT collection management</Description>
-    <Version>1.0.1</Version>
+    <Version>1.0.3</Version>
     <Platforms>AnyCPU;x64</Platforms>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <RepositoryUrl>https://github.com/Siamango/SolmangoNET</RepositoryUrl>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="..\LICENSE.txt" Pack="true" PackagePath="LICENSE.txt" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <PackageReference Include="OneOf" Version="3.0.205" />
-    <PackageReference Include="Solnet.KeyStore" Version="0.4.18" />
-    <PackageReference Include="Solnet.Programs" Version="0.4.18" />
-    <PackageReference Include="Solnet.Rpc" Version="0.4.18" />
+    <PackageReference Include="Solnet.KeyStore" Version="0.5.0" />
+    <PackageReference Include="Solnet.Programs" Version="0.5.0" />
+    <PackageReference Include="Solnet.Rpc" Version="0.5.0" />
   </ItemGroup>
 
 </Project>
