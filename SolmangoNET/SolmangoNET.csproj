@@ -6,7 +6,7 @@
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <Authors>Siamango</Authors>
     <Description>A .NET library that adds some useful composite RPC calls to the Solana chain to simply NFT collection management</Description>
-    <Version>1.0.3</Version>
+    <Version>1.1.0</Version>
     <Platforms>AnyCPU;x64</Platforms>
     <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
