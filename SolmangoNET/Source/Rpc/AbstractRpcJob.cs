@@ -21,7 +21,7 @@ public class RpcJob<T> : AbstractRpcJob
 {
     private readonly Func<Task<T>> job;
 
-    public Task<T> Task { get; private set; } = null;
+    public Task<T>? Task { get; private set; } = null;
 
     public RpcJob(Func<Task<T>> job, int jobRpcCalls) : base(jobRpcCalls)
     {

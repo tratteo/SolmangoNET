@@ -4,9 +4,15 @@ using Solnet.Rpc.Models;
 
 namespace SolmangoNET;
 
-public class ClusterSnapshot
+public readonly struct ClusterSnapshot
 {
-    public BlockHash BlockHash { get; init; }
+    public readonly BlockHash blockHash;
 
-    public FeesInfo FeesInfo { get; init; }
+    public readonly FeesInfo feesInfo;
+
+    public ClusterSnapshot(BlockHash blockHash, FeesInfo feesInfo)
+    {
+        this.blockHash = blockHash;
+        this.feesInfo = feesInfo;
+    }
 }

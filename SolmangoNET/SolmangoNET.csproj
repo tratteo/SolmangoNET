@@ -17,10 +17,11 @@
   <ItemGroup>
     <None Include="..\LICENSE.txt" Pack="true" PackagePath="LICENSE.txt" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
-    <PackageReference Include="OneOf" Version="3.0.205" />
-    <PackageReference Include="Solnet.KeyStore" Version="0.5.0" />
-    <PackageReference Include="Solnet.Programs" Version="0.5.0" />
-    <PackageReference Include="Solnet.Rpc" Version="0.5.0" />
+    <PackageReference Include="OneOf" Version="3.0.216" />
+    <PackageReference Include="Solana.Metaplex" Version="1.2.0" />
+    <PackageReference Include="Solnet.KeyStore" Version="6.0.3" />
+    <PackageReference Include="Solnet.Programs" Version="6.0.3" />
+    <PackageReference Include="Solnet.Rpc" Version="6.0.3" />
   </ItemGroup>
 
 </Project>

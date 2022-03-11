@@ -15,7 +15,7 @@ public class BasicRpcScheduler : IRpcScheduler
     private readonly int rpcCallDelay;
     private readonly int maxEnqueuableRequests;
     private bool running = false;
-    private Thread schedulerThread;
+    private Thread? schedulerThread;
 
     public int JobsCount => rpcJobs.Count;
 
@@ -63,7 +63,7 @@ public class BasicRpcScheduler : IRpcScheduler
         {
             if (rpcJobs.Count > 0)
             {
-                AbstractRpcJob job = null;
+                AbstractRpcJob? job = null;
                 lock (rpcJobs)
                 {
                     job = rpcJobs.Dequeue();
