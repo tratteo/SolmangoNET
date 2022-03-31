@@ -32,11 +32,12 @@ public static class Solmango
     /// <param name="symbol"> Symbol of the collections, use <i> string.Empty </i> if not needed </param>
     /// <param name="updateAuthority"> The address of the update authority address, use <i> null </i> if not needed </param>
     /// <returns> A list of all the mint addresses of the collection on success </returns>
-    public static async Task<OneOf<List<(string, AccountKeyPair)>, SolmangoRpcException>> ScrapeCollectionMints(IRpcClient rpcClient, string name, string symbol, PublicKey updateAuthority)
+    public static async Task<OneOf<List<(string, AccountKeyPair)>, SolmangoRpcException>> ScrapeCollectionMints(IRpcClient rpcClient, string? name, string? symbol, PublicKey? updateAuthority)
     {
-        if (name.Equals(string.Empty) && symbol.Equals(string.Empty) && updateAuthority.Equals(string.Empty)) return new List<(string, AccountKeyPair)>();
-        List<MemCmp> filters = new List<MemCmp>();
-        if (!name.Equals(string.Empty))
+        if (name is null && symbol is null && updateAuthority is null)
+            return new List<(string, AccountKeyPair)>();
+        var filters = new List<MemCmp>();
+        if (name is not null)
         {
             filters.Add(new()
             {
@@ -44,7 +45,7 @@ public static class Solmango
                 Bytes = Encoders.Base58.EncodeData(Encoding.UTF8.GetBytes(name))
             });
         }
-        if (!symbol.Equals(string.Empty))
+        if (symbol is not null)
         {
             filters.Add(new()
             {
@@ -65,7 +66,7 @@ public static class Solmango
         var response = await rpcClient.GetProgramAccountsAsync(MetadataProgram.ProgramIdKey, Commitment.Finalized, null, filters.Count > 0 ? filters : null);
         if (response.WasRequestSuccessfullyHandled)
         {
-            foreach (AccountKeyPair pair in response.Result)
+            foreach (var pair in response.Result)
             {
                 string mint = ((ReadOnlySpan<byte>)Convert.FromBase64String(pair.Account.Data[0])).GetPubKey(33);
                 mints.Add((mint, pair));
@@ -91,7 +92,7 @@ public static class Solmango
         var response = await rpcClient.GetTokenAccountsByOwnerAsync(owner, null, TokenProgram.ProgramIdKey);
         if (response.WasRequestSuccessfullyHandled)
         {
-            foreach (TokenAccount account in response.Result.Value)
+            foreach (var account in response.Result.Value)
             {
                 var index = mintsCopy.FindIndex(m => m.Equals(account.Account.Data.Parsed.Info.Mint));
                 if (index >= 0 && int.Parse(account.Account.Data.Parsed.Info.TokenAmount.Amount) > 0)
@@ -114,8 +115,8 @@ public static class Solmango
     /// <returns> The cluster snapshot containing information about the recent BlockHash and the FeeCalculator </returns>
     public static async Task<OneOf<ClusterSnapshot, SolmangoRpcException>> GetClusterSnapshot(IRpcClient rpcClient)
     {
-        var blockResponse = await rpcClient.GetRecentBlockHashAsync();
-        BlockHash blockHash;
+        var blockResponse = await rpcClient.GetLatestBlockHashAsync();
+        LatestBlockHash blockHash;
         if (blockResponse.WasRequestSuccessfullyHandled)
         {
             blockHash = blockResponse.Result.Value;
@@ -147,7 +148,7 @@ public static class Solmango
     public static async Task<OneOf<Dictionary<string, List<string>>, SolmangoRpcException>> GetOwnersByCollection(IRpcClient rpcClient, ImmutableList<string> collection, IProgress<float>? progressReport = null)
     {
         Dictionary<string, List<string>> owners = new();
-        Stopwatch waitWatch = Stopwatch.StartNew();
+        var waitWatch = Stopwatch.StartNew();
         for (var i = 0; i < collection.Count; i++)
         {
             var mint = collection[i];
@@ -199,7 +200,7 @@ public static class Solmango
     public static async Task<Dictionary<string, List<string>>> GetOwnersByCollectionParallel(IRpcClient rpcClient, ImmutableList<string> collection, IProgress<float>? progressReport = null)
     {
         Dictionary<string, List<string>> owners = new();
-        int counter = 0;
+        var counter = 0;
 
         await Parallel.ForEachAsync(collection, async (mint, token) =>
         {
