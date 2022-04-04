@@ -244,8 +244,7 @@ public static class Solmango
     public static async Task<string?> TryGetAssociatedTokenAccount(IRpcClient rpcClient, string address, string tokenMint)
     {
         var res = await rpcClient.GetTokenAccountsByOwnerAsync(address, tokenMint);
-        var result = res.Result.Value;
-        return result is not null && result.Count > 0 ? result[0].PublicKey : null;
+        return res.Result is null ? null : res.Result.Value is not null && res.Result.Value.Count > 0 ? res.Result.Value[0].PublicKey : null;
     }
 
     /// <summary>
@@ -255,7 +254,7 @@ public static class Solmango
     /// <param name="toPublicKey"> </param>
     /// <param name="fromAccount"> </param>
     /// <param name="tokenMint"> </param>
-    /// <param name="amount"> </param>
+    /// <param name="amount"> The amount in Sol to send </param>
     /// <returns> </returns>
     public static async Task<OneOf<bool, SolmangoRpcException>> SendSplToken(IRpcClient rpcClient, Account fromAccount, string toPublicKey, string tokenMint, ulong amount)
     {
