@@ -256,7 +256,7 @@ public static class Solmango
     /// <param name="tokenMint"> </param>
     /// <param name="amount"> The amount in Sol to send </param>
     /// <returns> </returns>
-    public static async Task<OneOf<bool, SolmangoRpcException>> SendSplToken(IRpcClient rpcClient, Account fromAccount, string toPublicKey, string tokenMint, ulong amount)
+    public static async Task<OneOf<bool, SolmangoRpcException>> SendSplToken(IRpcClient rpcClient, Account fromAccount, string toPublicKey, string tokenMint, double amount)
     {
         var blockHash = await rpcClient.GetLatestBlockHashAsync();
         var rentExemptionAmmount = await rpcClient.GetMinimumBalanceForRentExemptionAsync(TokenProgram.TokenAccountDataSize);
@@ -270,7 +270,7 @@ public static class Solmango
         if (sourceTokenAccount is null) return false;
         byte[] transaction;
 
-        var actualAmount = res.Result.Value.Decimals == 0 ? amount : amount * (ulong)res.Result.Value.Decimals;
+        var actualAmount = (ulong)(amount * Math.Pow(10, res.Result.Value.Decimals));
 
         if (associatedAccount is not null)
         {
