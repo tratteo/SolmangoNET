@@ -263,18 +263,22 @@ public static class Solmango
         var first = TryGetAssociatedTokenAccount(rpcClient, toPublicKey, tokenMint);
         var second = TryGetAssociatedTokenAccount(rpcClient, fromAccount.PublicKey, tokenMint);
         await Task.WhenAll(first, second);
-
+        var res = await rpcClient.GetTokenSupplyAsync(tokenMint);
+        if (!res.WasRequestSuccessfullyHandled) return false;
         var associatedAccount = first.Result;
         var sourceTokenAccount = second.Result;
         if (sourceTokenAccount is null) return false;
         byte[] transaction;
+
+        var actualAmount = res.Result.Value.Decimals == 0 ? amount : amount * (ulong)res.Result.Value.Decimals;
+
         if (associatedAccount is not null)
         {
             transaction = new TransactionBuilder().SetRecentBlockHash(blockHash.Result.Value.Blockhash)
                 .SetFeePayer(fromAccount)
                 .AddInstruction(TokenProgram.Transfer(new PublicKey(sourceTokenAccount),
                 new PublicKey(associatedAccount),
-                amount.ToLamports(),
+                actualAmount,
                 fromAccount.PublicKey))
                 .Build(fromAccount);
         }
@@ -297,7 +301,7 @@ public static class Solmango
                     new PublicKey(toPublicKey))).
                 AddInstruction(TokenProgram.Transfer(new PublicKey(sourceTokenAccount),
                     newAccKeypair.PublicKey,
-                    amount.ToLamports(),
+                    actualAmount,
                     fromAccount.PublicKey))
                 .Build(new List<Account>()
                 {
@@ -305,7 +309,7 @@ public static class Solmango
                         newAccKeypair
                 });
         }
-        var res = await rpcClient.SendTransactionAsync(Convert.ToBase64String(transaction));
+        var result = await rpcClient.SendTransactionAsync(Convert.ToBase64String(transaction));
         return !res.WasRequestSuccessfullyHandled ? new SolmangoRpcException(res.Reason, res.ServerErrorCode) : true;
     }
 }
