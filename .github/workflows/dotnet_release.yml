@@ -3,13 +3,13 @@ name: .NET Release
 on:
   workflow_run:
     workflows: [".NET CI"]
-    branches: [ master ]
+    branches: [ main ]
     types:
       - completed
 
 jobs:
   publish-nuget:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
     - name: Setup .NET Core
@@ -21,7 +21,7 @@ jobs:
     - name: Build
       run: dotnet build --configuration Release --no-restore
     - name: Publish to NuGet
-      uses: brandedoutcast/publish-nuget@v2
+      uses: brandedoutcast/publish-nuget@v2.5.5
       with:
         PROJECT_FILE_PATH: SolmangoNET/SolmangoNET.csproj
         PACKAGE_NAME: Siamango.SolmangoNET
