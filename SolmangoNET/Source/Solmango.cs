@@ -310,6 +310,6 @@ public static class Solmango
                 });
         }
         var result = await rpcClient.SendTransactionAsync(Convert.ToBase64String(transaction));
-        return !res.WasRequestSuccessfullyHandled ? new SolmangoRpcException(res.Reason, res.ServerErrorCode) : true;
+        return !result.WasRequestSuccessfullyHandled ? new SolmangoRpcException(result.Reason, result.ServerErrorCode) : true;
     }
 }
