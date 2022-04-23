@@ -259,14 +259,16 @@ public static class Solmango
     public static async Task<OneOf<bool, SolmangoRpcException>> SendSplToken(IRpcClient rpcClient, Account fromAccount, string toPublicKey, string tokenMint, double amount)
     {
         var blockHash = await rpcClient.GetLatestBlockHashAsync();
+        if (blockHash is null) return false;
+        if (!blockHash.WasRequestSuccessfullyHandled) return new SolmangoRpcException(blockHash.Reason, blockHash.ServerErrorCode);
         var rentExemptionAmmount = await rpcClient.GetMinimumBalanceForRentExemptionAsync(TokenProgram.TokenAccountDataSize);
-        var first = TryGetAssociatedTokenAccount(rpcClient, toPublicKey, tokenMint);
-        var second = TryGetAssociatedTokenAccount(rpcClient, fromAccount.PublicKey, tokenMint);
-        await Task.WhenAll(first, second);
+        if (rentExemptionAmmount is null) return false;
+        if (!rentExemptionAmmount.WasRequestSuccessfullyHandled) return new SolmangoRpcException(rentExemptionAmmount.Reason, rentExemptionAmmount.ServerErrorCode);
+        var associatedAccount = await TryGetAssociatedTokenAccount(rpcClient, toPublicKey, tokenMint);
+        var sourceTokenAccount = await TryGetAssociatedTokenAccount(rpcClient, fromAccount.PublicKey, tokenMint);
         var res = await rpcClient.GetTokenSupplyAsync(tokenMint);
-        if (!res.WasRequestSuccessfullyHandled) return false;
-        var associatedAccount = first.Result;
-        var sourceTokenAccount = second.Result;
+        if (res is null) return false;
+        if (!res.WasRequestSuccessfullyHandled) return new SolmangoRpcException(res.Reason, res.ServerErrorCode);
         if (sourceTokenAccount is null) return false;
         byte[] transaction;
 
@@ -310,6 +312,8 @@ public static class Solmango
                 });
         }
         var result = await rpcClient.SendTransactionAsync(Convert.ToBase64String(transaction));
-        return !result.WasRequestSuccessfullyHandled ? new SolmangoRpcException(result.Reason, result.ServerErrorCode) : true;
+        return result is null
+            ? (OneOf<bool, SolmangoRpcException>)false
+            : !result.WasRequestSuccessfullyHandled ? new SolmangoRpcException(result.Reason, result.ServerErrorCode) : true;
     }
 }
