@@ -241,10 +241,10 @@ public static class Solmango
     /// <param name="address"> </param>
     /// <param name="tokenMint"> </param>
     /// <returns> </returns>
-    public static async Task<string?> TryGetAssociatedTokenAccount(IRpcClient rpcClient, string address, string tokenMint)
+    public static async Task<TokenAccount?> TryGetAssociatedTokenAccount(IRpcClient rpcClient, string address, string tokenMint)
     {
         var res = await rpcClient.GetTokenAccountsByOwnerAsync(address, tokenMint);
-        return res.Result is null ? null : res.Result.Value is not null && res.Result.Value.Count > 0 ? res.Result.Value[0].PublicKey : null;
+        return res.Result is null ? null : res.Result.Value is not null && res.Result.Value.Count > 0 ? res.Result.Value[0] : null;
     }
 
     /// <summary>
@@ -265,6 +265,7 @@ public static class Solmango
         if (rentExemptionAmmount is null) return false;
         if (!rentExemptionAmmount.WasRequestSuccessfullyHandled) return new SolmangoRpcException(rentExemptionAmmount.Reason, rentExemptionAmmount.ServerErrorCode);
         var associatedAccount = await TryGetAssociatedTokenAccount(rpcClient, toPublicKey, tokenMint);
+        if (associatedAccount is null) return false;
         var sourceTokenAccount = await TryGetAssociatedTokenAccount(rpcClient, fromAccount.PublicKey, tokenMint);
         var res = await rpcClient.GetTokenSupplyAsync(tokenMint);
         if (res is null) return false;
@@ -278,8 +279,8 @@ public static class Solmango
         {
             transaction = new TransactionBuilder().SetRecentBlockHash(blockHash.Result.Value.Blockhash)
                 .SetFeePayer(fromAccount)
-                .AddInstruction(TokenProgram.Transfer(new PublicKey(sourceTokenAccount),
-                new PublicKey(associatedAccount),
+                .AddInstruction(TokenProgram.Transfer(new PublicKey(sourceTokenAccount.PublicKey),
+                new PublicKey(associatedAccount.PublicKey),
                 actualAmount,
                 fromAccount.PublicKey))
                 .Build(fromAccount);
@@ -301,7 +302,7 @@ public static class Solmango
                     newAccKeypair.PublicKey,
                     new PublicKey(tokenMint),
                     new PublicKey(toPublicKey))).
-                AddInstruction(TokenProgram.Transfer(new PublicKey(sourceTokenAccount),
+                AddInstruction(TokenProgram.Transfer(new PublicKey(sourceTokenAccount.PublicKey),
                     newAccKeypair.PublicKey,
                     actualAmount,
                     fromAccount.PublicKey))
