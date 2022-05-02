@@ -3,6 +3,7 @@
 using OneOf;
 using Solana.Metaplex;
 using SolmangoNET.Exceptions;
+using SolmangoNET.Rpc;
 using Solnet.Programs;
 using Solnet.Programs.Utilities;
 using Solnet.Rpc;
@@ -14,7 +15,6 @@ using Solnet.Wallet.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -81,7 +81,8 @@ public static class Solmango
     }
 
     /// <summary>
-    ///   Filter mints owned by a certain addres from a collection of mint addresses. Throws <see cref="SolmangoRpcException"/> on rpc fatal error.
+    ///   Filter mints owned by a certain address from a collection of mint addresses. Throws <see cref="SolmangoRpcException"/> on rpc
+    ///   fatal error.
     /// </summary>
     /// <param name="collection"> </param>
     /// <param name="owner"> </param>
@@ -116,42 +117,12 @@ public static class Solmango
     /// <param name="rpcClient"> </param>
     /// <param name="owner"> </param>
     /// <param name="tokenMint"> </param>
-    /// <returns> </returns>
+    /// <returns> The associated token account, null if not found </returns>
     public static async Task<PublicKey?> GetAssociatedTokenAccount(IRpcClient rpcClient, string owner, string tokenMint)
     {
         var associatedAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(new PublicKey(owner), new PublicKey(tokenMint));
         var res = await rpcClient.GetTokenAccountBalanceAsync(associatedAccount);
         return res.WasRequestSuccessfullyHandled ? associatedAccount : null;
-    }
-
-    /// <summary>
-    ///   Calculate the snapshot for the Solana network
-    /// </summary>
-    /// <returns> The cluster snapshot containing information about the recent BlockHash and the FeeCalculator </returns>
-    public static async Task<OneOf<ClusterSnapshot, SolmangoRpcException>> GetClusterSnapshot(IRpcClient rpcClient)
-    {
-        var blockResponse = await rpcClient.GetLatestBlockHashAsync();
-        LatestBlockHash blockHash;
-        if (blockResponse.WasRequestSuccessfullyHandled)
-        {
-            blockHash = blockResponse.Result.Value;
-        }
-        else
-        {
-            return new SolmangoRpcException(blockResponse.Reason, blockResponse.ServerErrorCode);
-        }
-
-        var feesResponse = await rpcClient.GetFeesAsync();
-        FeesInfo fees;
-        if (feesResponse.WasRequestSuccessfullyHandled)
-        {
-            fees = feesResponse.Result.Value;
-        }
-        else
-        {
-            return new SolmangoRpcException(blockResponse.Reason, blockResponse.ServerErrorCode);
-        }
-        return new ClusterSnapshot(blockHash, fees);
     }
 
     /// <summary>
@@ -163,89 +134,71 @@ public static class Solmango
     public static async Task<OneOf<Dictionary<string, List<string>>, SolmangoRpcException>> GetOwnersByCollection(IRpcClient rpcClient, ImmutableList<string> collection, IProgress<double>? progressReport = null)
     {
         Dictionary<string, List<string>> owners = new();
-        var waitWatch = Stopwatch.StartNew();
+        var scheduler = new BasicRpcScheduler(collection.Count, 100);
+        scheduler.Start();
         for (var i = 0; i < collection.Count; i++)
         {
             var mint = collection[i];
-            waitWatch.Restart();
             // Get the mint largest account address
-            var response = await rpcClient.GetTokenLargestAccountsAsync(mint);
-            if (response.WasRequestSuccessfullyHandled)
+            var oneOf = scheduler.Schedule(() => rpcClient.GetTokenLargestAccountsAsync(mint));
+            if (oneOf.TryPickT1(out var satEx, out var jobToken))
             {
-                // Get the largest account info
-                var accountResponse = await rpcClient.GetAccountInfoAsync(response.Result.Value[0].Address);
-                if (accountResponse.WasRequestSuccessfullyHandled)
-                {
-                    // Update the owner dictionary
-                    string owner = ((ReadOnlySpan<byte>)Convert.FromBase64String(accountResponse.Result.Value.Data[0])).GetPubKey(32);
-                    if (owners.ContainsKey(owner))
-                    {
-                        owners[owner].Add(mint);
-                    }
-                    else
-                    {
-                        owners.Add(owner, new List<string>() { mint });
-                    }
-                }
-                else
-                {
-                    return new SolmangoRpcException(accountResponse.Reason, accountResponse.ServerErrorCode);
-                }
+                return new SolmangoRpcException("Scheduler saturated", 0x0);
             }
-            else
+
+            var response = await jobToken;
+            if (!response.WasRequestSuccessfullyHandled)
             {
                 return new SolmangoRpcException(response.Reason, response.ServerErrorCode);
             }
-            waitWatch.Stop();
-            if (waitWatch.ElapsedMilliseconds < 200)
+            // Get the largest account info
+            var accountResponseOneOf = scheduler.Schedule(() => rpcClient.GetAccountInfoAsync(response.Result.Value[0].Address));
+            if (accountResponseOneOf.TryPickT1(out satEx, out var accountJobToken))
             {
-                await Task.Delay((int)(200 - waitWatch.ElapsedMilliseconds));
+                return new SolmangoRpcException("Scheduler saturated", 0x0);
             }
+            var accountResponse = await accountJobToken;
+            if (!accountResponse.WasRequestSuccessfullyHandled)
+            {
+                return new SolmangoRpcException(accountResponse.Reason, accountResponse.ServerErrorCode);
+            }
+
+            // Update the owner dictionary
+            string owner = ((ReadOnlySpan<byte>)Convert.FromBase64String(accountResponse.Result.Value.Data[0])).GetPubKey(32);
+            if (owners.ContainsKey(owner))
+            {
+                owners[owner].Add(mint);
+            }
+            else
+            {
+                owners.Add(owner, new List<string>() { mint });
+            }
+
             progressReport?.Report((float)i / collection.Count);
         }
+
+        scheduler.Interrupt();
         return owners;
     }
 
     /// <summary>
-    ///   Calculate the dictionary containing the owners of each mint of a specified collection. Requests are in parallel and rate is unbounded
+    ///   Get all the holders of the specified spl token
     /// </summary>
     /// <param name="rpcClient"> </param>
-    /// <param name="collection"> </param>
-    /// <returns> A dictionary with the owner address as key and the list of all his mints as value </returns>
-    public static async Task<Dictionary<string, List<string>>> GetOwnersByCollectionParallel(IRpcClient rpcClient, ImmutableList<string> collection, IProgress<double>? progressReport = null)
+    /// <param name="tokenMint"> </param>
+    /// <returns> The list of all the holders </returns>
+    public static async Task<OneOf<List<AccountKeyPair>, SolmangoRpcException>> GetSplTokenHolders(IRpcClient rpcClient, string tokenMint)
     {
-        Dictionary<string, List<string>> owners = new();
-        var counter = 0;
-
-        await Parallel.ForEachAsync(collection, async (mint, token) =>
+        var filters = new List<MemCmp>()
         {
-            // Get the mint largest account address
-            var response = await rpcClient.GetTokenLargestAccountsAsync(mint);
-            if (response.WasRequestSuccessfullyHandled)
+            new MemCmp()
             {
-                // Get the largest account info
-                var accountResponse = await rpcClient.GetAccountInfoAsync(response.Result.Value[0].Address);
-                if (accountResponse.WasRequestSuccessfullyHandled)
-                {
-                    // Update the owner dictionary
-                    string owner = ((ReadOnlySpan<byte>)Convert.FromBase64String(accountResponse.Result.Value.Data[0])).GetPubKey(32);
-                    lock (owners)
-                    {
-                        if (owners.ContainsKey(owner))
-                        {
-                            owners[owner].Add(mint);
-                        }
-                        else
-                        {
-                            owners.Add(owner, new List<string>() { mint });
-                        }
-                    }
-                }
+                Offset = 0,
+                Bytes = Encoders.Base58.EncodeData(new PublicKey(tokenMint).KeyBytes)
             }
-            Interlocked.Increment(ref counter);
-            progressReport?.Report((float)counter / collection.Count);
-        });
-        return owners;
+        };
+        var res = await rpcClient.GetProgramAccountsAsync(TokenProgram.ProgramIdKey, Commitment.Finalized, TokenProgram.TokenAccountDataSize, filters);
+        return res.WasRequestSuccessfullyHandled ? res.Result : new SolmangoRpcException(res.Reason, res.ServerErrorCode);
     }
 
     /// <summary>
@@ -314,5 +267,47 @@ public static class Solmango
         return result is null
             ? (OneOf<bool, SolmangoRpcException>)false
             : !result.WasRequestSuccessfullyHandled ? new SolmangoRpcException(result.Reason, result.ServerErrorCode) : true;
+    }
+
+    /// <summary>
+    ///   Calculate the dictionary containing the owners of each mint of a specified collection. Requests are in parallel and rate is unbounded
+    /// </summary>
+    /// <param name="rpcClient"> </param>
+    /// <param name="collection"> </param>
+    /// <returns> A dictionary with the owner address as key and the list of all his mints as value </returns>
+    public static async Task<Dictionary<string, List<string>>> GetOwnersByCollectionParallel(IRpcClient rpcClient, ImmutableList<string> collection, IProgress<double>? progressReport = null)
+    {
+        Dictionary<string, List<string>> owners = new();
+        var counter = 0;
+
+        await Parallel.ForEachAsync(collection, async (mint, token) =>
+        {
+            // Get the mint largest account address
+            var response = await rpcClient.GetTokenLargestAccountsAsync(mint);
+            if (response.WasRequestSuccessfullyHandled)
+            {
+                // Get the largest account info
+                var accountResponse = await rpcClient.GetAccountInfoAsync(response.Result.Value[0].Address);
+                if (accountResponse.WasRequestSuccessfullyHandled)
+                {
+                    // Update the owner dictionary
+                    string owner = ((ReadOnlySpan<byte>)Convert.FromBase64String(accountResponse.Result.Value.Data[0])).GetPubKey(32);
+                    lock (owners)
+                    {
+                        if (owners.ContainsKey(owner))
+                        {
+                            owners[owner].Add(mint);
+                        }
+                        else
+                        {
+                            owners.Add(owner, new List<string>() { mint });
+                        }
+                    }
+                }
+            }
+            Interlocked.Increment(ref counter);
+            progressReport?.Report((float)counter / collection.Count);
+        });
+        return owners;
     }
 }
