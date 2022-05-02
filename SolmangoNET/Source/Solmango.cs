@@ -91,7 +91,7 @@ public static class Solmango
         List<string> mintsCopy = new(collection);
         List<string> addressMints = new();
         var response = await rpcClient.GetTokenAccountsByOwnerAsync(owner, null, TokenProgram.ProgramIdKey);
-        if (response.WasRequestSuccessfullyHandled)
+        if (response.Result is not null && response.WasRequestSuccessfullyHandled)
         {
             foreach (var account in response.Result.Value)
             {
@@ -108,6 +108,20 @@ public static class Solmango
         {
             return new SolmangoRpcException(response.Reason, response.ServerErrorCode);
         }
+    }
+
+    /// <summary>
+    ///   Get the associated token account
+    /// </summary>
+    /// <param name="rpcClient"> </param>
+    /// <param name="owner"> </param>
+    /// <param name="tokenMint"> </param>
+    /// <returns> </returns>
+    public static async Task<PublicKey?> GetAssociatedTokenAccount(IRpcClient rpcClient, string owner, string tokenMint)
+    {
+        var associatedAccount = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(new PublicKey(owner), new PublicKey(tokenMint));
+        var res = await rpcClient.GetTokenAccountBalanceAsync(associatedAccount);
+        return res.WasRequestSuccessfullyHandled ? associatedAccount : null;
     }
 
     /// <summary>
@@ -235,83 +249,67 @@ public static class Solmango
     }
 
     /// <summary>
-    ///   Tries to retrive the associated token account of the given mint on a specified address
+    ///   Sends a custom SPL token. Handles the associated token account
     /// </summary>
     /// <param name="rpcClient"> </param>
-    /// <param name="address"> </param>
-    /// <param name="tokenMint"> </param>
-    /// <returns> </returns>
-    public static async Task<TokenAccount?> TryGetAssociatedTokenAccount(IRpcClient rpcClient, string address, string tokenMint)
-    {
-        var res = await rpcClient.GetTokenAccountsByOwnerAsync(address, tokenMint);
-        return res.Result is null ? null : res.Result.Value is not null && res.Result.Value.Count > 0 ? res.Result.Value[0] : null;
-    }
-
-    /// <summary>
-    ///   Sends a custom SPL token. Create the address on the receiver account if does not exists.
-    /// </summary>
-    /// <param name="rpcClient"> </param>
-    /// <param name="toPublicKey"> </param>
-    /// <param name="fromAccount"> </param>
+    /// <param name="receiver"> </param>
+    /// <param name="sender"> </param>
     /// <param name="tokenMint"> </param>
     /// <param name="amount"> The amount in Sol to send </param>
     /// <returns> </returns>
-    public static async Task<OneOf<bool, SolmangoRpcException>> SendSplToken(IRpcClient rpcClient, Account fromAccount, string toPublicKey, string tokenMint, double amount)
+    public static async Task<OneOf<bool, SolmangoRpcException>> SendSplToken(IRpcClient rpcClient, Account sender, string receiver, string tokenMint, double amount)
     {
+        // Get the blockhash
         var blockHash = await rpcClient.GetLatestBlockHashAsync();
         if (blockHash is null) return false;
         if (!blockHash.WasRequestSuccessfullyHandled) return new SolmangoRpcException(blockHash.Reason, blockHash.ServerErrorCode);
-        var rentExemptionAmmount = await rpcClient.GetMinimumBalanceForRentExemptionAsync(TokenProgram.TokenAccountDataSize);
-        if (rentExemptionAmmount is null) return false;
-        if (!rentExemptionAmmount.WasRequestSuccessfullyHandled) return new SolmangoRpcException(rentExemptionAmmount.Reason, rentExemptionAmmount.ServerErrorCode);
-        var associatedAccount = await TryGetAssociatedTokenAccount(rpcClient, toPublicKey, tokenMint);
-        if (associatedAccount is null) return false;
-        var sourceTokenAccount = await TryGetAssociatedTokenAccount(rpcClient, fromAccount.PublicKey, tokenMint);
+
+        // Get the sender ata
+        var fromAta = await GetAssociatedTokenAccount(rpcClient, sender.PublicKey, tokenMint);
+        if (fromAta is null) return false;
+
+        // Get the token decimals and the actual amount
         var res = await rpcClient.GetTokenSupplyAsync(tokenMint);
         if (res is null) return false;
         if (!res.WasRequestSuccessfullyHandled) return new SolmangoRpcException(res.Reason, res.ServerErrorCode);
-        if (sourceTokenAccount is null) return false;
-        byte[] transaction;
 
         var actualAmount = (ulong)(amount * Math.Pow(10, res.Result.Value.Decimals));
 
-        if (associatedAccount is not null)
+        byte[] transaction;
+        // Get or create the receiver ata
+        var toAta = await GetAssociatedTokenAccount(rpcClient, receiver, tokenMint);
+        if (toAta is null)
         {
-            transaction = new TransactionBuilder().SetRecentBlockHash(blockHash.Result.Value.Blockhash)
-                .SetFeePayer(fromAccount)
-                .AddInstruction(TokenProgram.Transfer(new PublicKey(sourceTokenAccount.PublicKey),
-                new PublicKey(associatedAccount.PublicKey),
-                actualAmount,
-                fromAccount.PublicKey))
-                .Build(fromAccount);
+            toAta = AssociatedTokenAccountProgram.DeriveAssociatedTokenAccount(new PublicKey(receiver), new PublicKey(tokenMint));
+            transaction = new TransactionBuilder()
+               .SetRecentBlockHash(blockHash.Result.Value.Blockhash)
+               .SetFeePayer(sender)
+               .AddInstruction(
+                AssociatedTokenAccountProgram.CreateAssociatedTokenAccount(
+                   sender,
+                   new PublicKey(receiver),
+                   new PublicKey(tokenMint)))
+               .AddInstruction(TokenProgram.Transfer(
+                   fromAta,
+                   toAta,
+                   actualAmount,
+                   sender.PublicKey))
+               .Build(sender);
         }
         else
         {
-            var newAccKeypair = new Account();
-            transaction = new TransactionBuilder().SetRecentBlockHash(blockHash.Result.Value.Blockhash).
-                SetFeePayer(fromAccount).
-                AddInstruction(
-                SystemProgram.CreateAccount(
-                    fromAccount.PublicKey,
-                    newAccKeypair.PublicKey,
-                    rentExemptionAmmount.Result,
-                    TokenProgram.TokenAccountDataSize,
-                    TokenProgram.ProgramIdKey)).
-                AddInstruction(
-                TokenProgram.InitializeAccount(
-                    newAccKeypair.PublicKey,
-                    new PublicKey(tokenMint),
-                    new PublicKey(toPublicKey))).
-                AddInstruction(TokenProgram.Transfer(new PublicKey(sourceTokenAccount.PublicKey),
-                    newAccKeypair.PublicKey,
-                    actualAmount,
-                    fromAccount.PublicKey))
-                .Build(new List<Account>()
-                {
-                        fromAccount,
-                        newAccKeypair
-                });
+            transaction = new TransactionBuilder()
+            .SetRecentBlockHash(blockHash.Result.Value.Blockhash)
+            .SetFeePayer(sender)
+            .AddInstruction(TokenProgram.Transfer(
+                fromAta,
+                toAta,
+                actualAmount,
+                sender.PublicKey))
+            .Build(sender);
         }
+
+        // Perform transaction
         var result = await rpcClient.SendTransactionAsync(Convert.ToBase64String(transaction));
         return result is null
             ? (OneOf<bool, SolmangoRpcException>)false
