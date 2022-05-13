@@ -181,7 +181,15 @@ public static class Solmango
         return owners;
     }
 
-    public static Task<OneOf<Dictionary<string, List<string>>, SolmangoRpcException>> GetOwnersByCollectionBatched(IRpcClient rpcClient, ImmutableList<string> collection, IProgress<double>? progressReport = null, int batchSizeTrigger = 100)
+    /// <summary>
+    ///   Calculate the dictionary containing the owners of each mint of a specified collection. using <see cref="SolanaRpcBatchWithCallbacks"/>
+    /// </summary>
+    /// <param name="rpcClient"> </param>
+    /// <param name="collection"> </param>
+    /// <param name="progressReport"> </param>
+    /// <param name="batchSizeTrigger"> </param>
+    /// <returns> A dictionary with the owner address as key and the list of all his mints as value </returns>
+    public static OneOf<Dictionary<string, List<string>>, SolmangoRpcException> GetOwnersByCollectionBatched(IRpcClient rpcClient, ImmutableList<string> collection, IProgress<double>? progressReport = null, int batchSizeTrigger = 100)
     {
         Dictionary<string, List<string>> owners = new();
         SolanaRpcBatchWithCallbacks batcher = new SolanaRpcBatchWithCallbacks(rpcClient);
