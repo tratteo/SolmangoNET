@@ -181,11 +181,19 @@ public static class Solmango
         return owners;
     }
 
-    //use genesys go endpoint for the rpcclient
+    /// <summary>
+    ///   Calculate the dictionary containing the owners of each mint of a specified collection. Send requests in batches to greatly speed
+    ///   up the process. Use unbounded rate endpoints, such as <see href="https://www.genesysgo.com/"/>
+    /// </summary>
+    /// <param name="rpcClient"> </param>
+    /// <param name="collection"> </param>
+    /// <param name="progressReport"> </param>
+    /// <param name="batchSizeTrigger"> </param>
+    /// <returns> A dictionary with the owner address as key and the list of all his mints as value </returns>
     public static OneOf<Dictionary<string, List<string>>, SolmangoRpcException> GetOwnersByCollectionBatched(IRpcClient rpcClient, ImmutableList<string> collection, IProgress<double>? progressReport = null, int batchSizeTrigger = 100)
     {
         Dictionary<string, List<string>> owners = new();
-        SolanaRpcBatchWithCallbacks batcher = new SolanaRpcBatchWithCallbacks(rpcClient);
+        var batcher = new SolanaRpcBatchWithCallbacks(rpcClient);
         batcher.AutoExecute(BatchAutoExecuteMode.ExecuteWithCallbackFailures, batchSizeTrigger);
         for (var i = 0; i < collection.Count; i++)
         {
@@ -211,7 +219,7 @@ public static class Solmango
                     var pair = listKeyPair[j];
                     progressReport?.Report((float)i / collection.Count);
                     var bytes = Convert.FromBase64String(pair.Account.Data[0]);
-                    ulong balance = ((ReadOnlySpan<byte>)bytes).GetU64(64);
+                    var balance = ((ReadOnlySpan<byte>)bytes).GetU64(64);
                     if (balance <= 0) continue;
                     string owner = ((ReadOnlySpan<byte>)bytes).GetPubKey(32);
                     lock (owners)
@@ -253,7 +261,7 @@ public static class Solmango
     }
 
     /// <summary>
-    ///   Sends a TransactionBatch of the given list of transactions
+    ///   Sends a multiple transactions in batch to greatly speed up the process. Use unbounded rate endpoints, such as <see href="https://www.genesysgo.com/"/>
     /// </summary>
     /// <param name="rpcClient"> </param>
     /// <param name="transactionsList"> </param>
@@ -261,33 +269,36 @@ public static class Solmango
     /// <returns> True on success or the list of failed transactions </returns>
     public static OneOf<bool, List<string>> SendTransactionBatch(IRpcClient rpcClient, List<string> transactionsList, int batchSizeTrigger = 100)
     {
-        SolanaRpcBatchWithCallbacks batcher = new SolanaRpcBatchWithCallbacks(rpcClient);
+        var batcher = new SolanaRpcBatchWithCallbacks(rpcClient);
         batcher.AutoExecute(BatchAutoExecuteMode.ExecuteWithCallbackFailures, batchSizeTrigger);
 
-        List<string> failedTransactions = new List<string>();
+        var failedTransactions = new List<string>();
         foreach (var transaction in transactionsList)
         {
             batcher.SendTransaction(transaction, false, Commitment.Finalized, (res, ex) =>
-             {
-                 if (ex is not null)
-                 {
-                     failedTransactions.Add(res);
-                 }
-             });
+            {
+                if (ex is not null)
+                {
+                    failedTransactions.Add(res);
+                }
+            });
         }
-        return failedTransactions.Count <= 0 ? (OneOf<bool, List<string>>)true : (OneOf<bool, List<string>>)failedTransactions;
+
+        batcher.Flush();
         //TODO find a better method to return the failed transactions
+        return failedTransactions.Count <= 0 ? (OneOf<bool, List<string>>)true : (OneOf<bool, List<string>>)failedTransactions;
     }
 
     /// <summary>
-    ///   builds a transaction to send tokens by handling the Associated token accounts
+    ///   Builds a transaction to send an SPL token. Use it with <see cref="SendTransactionBatch(IRpcClient, List{string}, int)"/> in order
+    ///   to batch multiple transactions.
     /// </summary>
     /// <param name="rpcClient"> </param>
     /// <param name="sender"> </param>
     /// <param name="receiver"> </param>
     /// <param name="tokenMint"> </param>
     /// <param name="amount"> </param>
-    /// <returns> One of Transaction or Exception </returns>
+    /// <returns> The transaction hash upon success </returns>
     public static async Task<OneOf<string, Exception>> BuildSendTransaction(IRpcClient rpcClient, Account sender, string receiver, string tokenMint, double amount)
     {
         // Get the blockhash
