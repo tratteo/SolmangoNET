@@ -181,14 +181,7 @@ public static class Solmango
         return owners;
     }
 
-    /// <summary>
-    ///   Calculate the dictionary containing the owners of each mint of a specified collection. using <see cref="SolanaRpcBatchWithCallbacks"/>
-    /// </summary>
-    /// <param name="rpcClient"> </param>
-    /// <param name="collection"> </param>
-    /// <param name="progressReport"> </param>
-    /// <param name="batchSizeTrigger"> </param>
-    /// <returns> A dictionary with the owner address as key and the list of all his mints as value </returns>
+    //use genesys go endpoint for the rpcclient
     public static OneOf<Dictionary<string, List<string>>, SolmangoRpcException> GetOwnersByCollectionBatched(IRpcClient rpcClient, ImmutableList<string> collection, IProgress<double>? progressReport = null, int batchSizeTrigger = 100)
     {
         Dictionary<string, List<string>> owners = new();
@@ -260,28 +253,55 @@ public static class Solmango
     }
 
     /// <summary>
-    ///   Sends a custom SPL token. Handles the associated token account
+    ///   Sends a TransactionBatch of the given list of transactions
     /// </summary>
     /// <param name="rpcClient"> </param>
-    /// <param name="receiver"> </param>
+    /// <param name="transactionsList"> </param>
+    /// <param name="batchSizeTrigger"> </param>
+    /// <returns> True on success or the list of failed transactions </returns>
+    public static OneOf<bool, List<string>> SendTransactionBatch(IRpcClient rpcClient, List<string> transactionsList, int batchSizeTrigger = 100)
+    {
+        SolanaRpcBatchWithCallbacks batcher = new SolanaRpcBatchWithCallbacks(rpcClient);
+        batcher.AutoExecute(BatchAutoExecuteMode.ExecuteWithCallbackFailures, batchSizeTrigger);
+
+        List<string> failedTransactions = new List<string>();
+        foreach (var transaction in transactionsList)
+        {
+            batcher.SendTransaction(transaction, false, Commitment.Finalized, (res, ex) =>
+             {
+                 if (ex is not null)
+                 {
+                     failedTransactions.Add(res);
+                 }
+             });
+        }
+        return failedTransactions.Count <= 0 ? (OneOf<bool, List<string>>)true : (OneOf<bool, List<string>>)failedTransactions;
+        //TODO find a better method to return the failed transactions
+    }
+
+    /// <summary>
+    ///   builds a transaction to send tokens by handling the Associated token accounts
+    /// </summary>
+    /// <param name="rpcClient"> </param>
     /// <param name="sender"> </param>
+    /// <param name="receiver"> </param>
     /// <param name="tokenMint"> </param>
-    /// <param name="amount"> The amount in Sol to send </param>
-    /// <returns> </returns>
-    public static async Task<OneOf<bool, SolmangoRpcException>> SendSplToken(IRpcClient rpcClient, Account sender, string receiver, string tokenMint, double amount)
+    /// <param name="amount"> </param>
+    /// <returns> One of Transaction or Exception </returns>
+    public static async Task<OneOf<string, Exception>> BuildSendTransaction(IRpcClient rpcClient, Account sender, string receiver, string tokenMint, double amount)
     {
         // Get the blockhash
         var blockHash = await rpcClient.GetLatestBlockHashAsync();
-        if (blockHash is null) return false;
+        if (blockHash is null) return new Exception("BlockHash can't be null");
         if (!blockHash.WasRequestSuccessfullyHandled) return new SolmangoRpcException(blockHash.Reason, blockHash.ServerErrorCode);
 
         // Get the sender ata
         var fromAta = await GetAssociatedTokenAccount(rpcClient, sender.PublicKey, tokenMint);
-        if (fromAta is null) return false;
+        if (fromAta is null) return new Exception("Sender ata can't be null");
 
         // Get the token decimals and the actual amount
         var res = await rpcClient.GetTokenSupplyAsync(tokenMint);
-        if (res is null) return false;
+        if (res is null) return new Exception("Token decimal can't be null");
         if (!res.WasRequestSuccessfullyHandled) return new SolmangoRpcException(res.Reason, res.ServerErrorCode);
 
         var actualAmount = (ulong)(amount * Math.Pow(10, res.Result.Value.Decimals));
@@ -320,8 +340,28 @@ public static class Solmango
             .Build(sender);
         }
 
-        // Perform transaction
-        var result = await rpcClient.SendTransactionAsync(Convert.ToBase64String(transaction));
+        return Convert.ToBase64String(transaction);
+    }
+
+    /// <summary>
+    ///   Sends a custom SPL token. Handles the associated token account
+    /// </summary>
+    /// <param name="rpcClient"> </param>
+    /// <param name="receiver"> </param>
+    /// <param name="sender"> </param>
+    /// <param name="tokenMint"> </param>
+    /// <param name="amount"> The amount in Sol to send </param>
+    /// <returns> </returns>
+    public static async Task<OneOf<bool, SolmangoRpcException>> SendSplToken(IRpcClient rpcClient, Account sender, string receiver, string tokenMint, double amount)
+    {
+        var res = await BuildSendTransaction(rpcClient, sender, receiver, tokenMint, amount);
+        if (res.TryPickT1(out var ex, out var transaction))
+        {
+            Console.WriteLine(ex.Message);
+            return false;
+        }
+        var result = await rpcClient.SendTransactionAsync(transaction);
+
         return result is null
             ? (OneOf<bool, SolmangoRpcException>)false
             : !result.WasRequestSuccessfullyHandled ? new SolmangoRpcException(result.Reason, result.ServerErrorCode) : true;
