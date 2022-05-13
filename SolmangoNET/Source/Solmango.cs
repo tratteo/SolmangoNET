@@ -181,6 +181,56 @@ public static class Solmango
         return owners;
     }
 
+    public static Task<OneOf<Dictionary<string, List<string>>, SolmangoRpcException>> GetOwnersByCollectionBatched(IRpcClient rpcClient, ImmutableList<string> collection, IProgress<double>? progressReport = null, int batchSizeTrigger = 100)
+    {
+        Dictionary<string, List<string>> owners = new();
+        SolanaRpcBatchWithCallbacks batcher = new SolanaRpcBatchWithCallbacks(rpcClient);
+        batcher.AutoExecute(BatchAutoExecuteMode.ExecuteWithCallbackFailures, batchSizeTrigger);
+        for (var i = 0; i < collection.Count; i++)
+        {
+            var mint = collection[i];
+            var filters = new List<MemCmp>()
+            {
+            new MemCmp()
+            {
+                Offset = 0,
+                Bytes = Encoders.Base58.EncodeData(new PublicKey(mint).KeyBytes)
+            }
+            };
+            // Get the mint largest account address
+            batcher.GetProgramAccounts(TokenProgram.ProgramIdKey, Commitment.Finalized, TokenProgram.TokenAccountDataSize, filters, (listKeyPair, ex) =>
+            {
+                if (ex is not null)
+                {
+                    Console.WriteLine(ex.Message);
+                    return;
+                }
+                for (var j = 0; j < listKeyPair.Count; j++)
+                {
+                    var pair = listKeyPair[j];
+                    progressReport?.Report((float)i / collection.Count);
+                    var bytes = Convert.FromBase64String(pair.Account.Data[0]);
+                    ulong balance = ((ReadOnlySpan<byte>)bytes).GetU64(64);
+                    if (balance <= 0) continue;
+                    string owner = ((ReadOnlySpan<byte>)bytes).GetPubKey(32);
+                    lock (owners)
+                    {
+                        if (owners.ContainsKey(owner))
+                        {
+                            owners[owner].Add(mint);
+                        }
+                        else
+                        {
+                            owners.Add(owner, new List<string>() { mint });
+                        }
+                    }
+                }
+            });
+        }
+        batcher.Flush();
+        return owners;
+    }
+
     /// <summary>
     ///   Get all the holders of the specified spl token
     /// </summary>
