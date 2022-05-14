@@ -276,7 +276,7 @@ public static class Solmango
         var results = new List<(string transaction, bool success)>();
         foreach (var transaction in transactions)
         {
-            batcher.SendTransaction(transaction, false, Commitment.Finalized, (res, ex) => results.Add((res, ex is not null)));
+            batcher.SendTransaction(transaction, false, Commitment.Finalized, (res, ex) => results.Add((res, ex is null)));
         }
         // This call is actually blocking, so the function needs to be async in order not to block
         batcher.Flush();
@@ -291,7 +291,7 @@ public static class Solmango
 
     /// <summary>
     ///   Builds a transaction to send an SPL token.
-    ///   <para> Use it with <see cref="SendTransactionBatch(IRpcClient, List{string}, int)"/> in order to batch multiple transactions. </para>
+    ///   <para> Use it with <see cref="SendTransactionBatch"/> in order to batch multiple transactions. </para>
     /// </summary>
     /// <param name="rpcClient"> </param>
     /// <param name="sender"> </param>
